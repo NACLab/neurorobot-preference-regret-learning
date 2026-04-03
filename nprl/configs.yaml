@@ -1,0 +1,456 @@
+defaults:
+  logroot: logs
+  logdir: ''
+  expname: 'dummy'
+  seed: 0
+  replicas: 1 # number of replicas to run
+  log_video_render: True # log the render of the envs
+  rc: False
+
+  logger:
+    outputs: [jsonl, tensorboard]
+    filter: 'score|length|fps|ratio|train/loss/|train/rand/'
+    timer: True
+    fps: 15
+    user: ''
+
+
+  jax:
+    platform: cuda
+    compute_dtype: bfloat16 # float32 # bfloat16
+    prealloc: True
+    jit: True
+    debug: False
+    enable_policy: True
+    compile: True
+    profiler: False
+    gpuflags: True
+
+  run:
+    steps: 3e6 # 1 million steps
+    eval_steps: 1e4 # 10k steps
+    duration: 0
+    train_ratio: 32.0
+    train_fill: 0 # number of steps to fill the replay buffer
+    log_every: 15 # 10 seconds
+    report_every: 60 # 20 seconds
+    save_every: 100 # 100 seconds
+    # envs: 1 # unused
+    # eval_envs: 1 # unused
+    # eval_eps: 1 # unused
+    report_batches: 1 # number of batches to take to do reports
+    from_checkpoint: ''
+    # episode_timeout: 180 # unused
+    actor_addr: 'localhost:{auto}'
+    replay_addr: 'localhost:{auto}'
+    logger_addr: 'localhost:{auto}'
+    actor_batch: -1
+    actor_threads: 1
+    agent_process: False
+    remote_replay: False
+    remote_envs: False
+    usage: {psutil: True, nvsmi: True, gputil: False, malloc: False, gc: False}
+    debug: True # for using parallel environments (False) or not (True)
+
+  # For single-task loading
+  task: "kitchen_microwave"
+
+  # For multi-task loading
+  multi_task: False
+  suite: "kitchen"
+  tasks: ["microwave", "kettle", "bottom burner", "light switch"]
+
+  # Task for evaluation
+  # eval_task: "kitchen_microwave"
+
+  env:
+    # NOTE: the batch size in the environment is different from the batch size in the config
+    # each environment has limit of n_samples
+    gym: { obs_key: state, img_obs_key: image, obs_render: False, image_size: 64 }
+    kitchen: { image_size: 128, obs_render: True, img_obs_key: image, object_noise_ratio: 0.0005, robot_noise_ratio: 0.01, max_episode_steps: 280 }
+    mtc: { reward_shaping: False }
+    robosuite: { image_size: [96, 96], camera_names: [agentview, robot0_eye_in_hand], reward_shaping: False, simple_obs: True, max_episode_steps: 1000, use_84x84_images: True }
+    languagetable: { image_size: 128, reward: block2block, max_episode_steps: 100 }
+    metaworld: {image_size: [64, 64], reward_shaping: False, action_repeat: 2}
+    qenv: { timeout: 5, }
+
+  # Related environmental and logging setup
+  n_envs: 4
+  batch_size: 8 # number of samples per batch
+  batch_length: 64 # number of steps to take per batch
+  report_length: 32 # batch length for reporting, for compilation, use same as batch_length
+  replay_context: 1 # number of steps to look back for replay
+  consec_train: 1 # number of batches to train per step
+  consec_report: 1 # number of batches to report per step
+  rstability_reward_offset: 5.0 # reward offset for r-stability
+
+  # Replay
+  replay:
+    size: 500000 # 500000 is enough
+    online: True
+    fracs: {uniform: 1.0, priority: 0.0, recency: 0.0}
+    prio: {exponent: 0.8, maxfrac: 0.5, initial: inf, zero_on_sample: True}
+    priosignal: model
+    recexp: 1.0
+    chunksize: 1024
+
+  server:
+    host: 0.0.0.0
+    port: 8000
+
+
+  agent: dummy
+
+  # Text
+  max_sequence_length: 16
+  text_processor: hf
+  text_processor_kwargs:
+    hf: {tokenizer_name: google/flan-t5-small, padding: max_length, truncation: True, return_tensors: np}
+
+  # expert setup
+  expert:
+    enable: False
+    n_episodes: -1
+    kitchen: { dataset_name: none, n_episodes: -1, prockeys: '.*' }
+    robosuite: { dataset_dir: none }
+    languagetable: { dataset_dir: data/language_table, dataset_name: language_table_blocktoblock_sim, shuffle: True, num_parallel_reads: 8, training_split: False }
+    robosuite_common: { dataset_path: none } # To differ from robosuite expert dataset from mimicgen
+    metaworld: { dataset_path: none }
+    qenv: { dataset_path: none }
+
+  # prior preference ratre assigment for learning preference models
+  # self_imitation: {disc: 0.6, thr: 0.001, fail: 0.6}
+  self_imitation: {disc: 0.999, thr: 0.001, fail: 0.97}
+
+  # Modules configs
+  encoder:
+    prockeys: '.*'
+    simple: {depth: 64, mults: [2, 3, 4, 4, 4], layers: 3, units: 64, act: silu, norm: layer, winit: trunc_normal_in, symlog: True, outer: False, kernel: 5, strided: False}
+    multimodal: { units: 64, norm: rms, act: gelu, depth: 64, layers: 3, kernel: 5, symlog: True, outer: False, strided: False,
+      vit_mlp_layers: 4, stage: [1], patch: 16, heads: 4, ffup: 4, qknorm: none, dropout: 0.2, use_resnet: False,
+      lang_units: 256, lang_layers: 12, lang_heads: 8, lang_ffup: 4, lang_act: silu, lang_norm: rms, lang_qknorm: none, lang_dropout: 0.0, lang_pool_depth: 1}
+
+  query_encoder:
+    prockeys: '.*attention_mask.*|.*input_ids.*' # normally, we take language as condition that guide the actions
+    simple: {depth: 64, mults: [2, 3, 4, 4, 4], layers: 3, units: 64, learnablegoal: True, act: silu, norm: layer,
+      winit: trunc_normal_in, symlog: True, outer: False, kernel: 5, strided: False,
+      lang_units: 64, lang_layers: 8, lang_heads: 8, lang_ffup: 4, lang_act: 'gelu_tanh',
+      lang_norm: 'layer', lang_qknorm: 'none', lang_dropout: 0.2, lang_pool_depth: 1}
+    vit: {none: none}
+
+  dynamics:
+    rssm: {deter: 256, hidden: 128, stoch: 16, classes: 16, norm: rms, act: silu, unroll: False, unimix: 0.01, outscale: 1.0, imglayers: 2, obslayers: 1, dynlayers: 1, absolute: False, blocks: 8, free_nats: 1.0}
+    qmopssm: {deter: 256, hidden: 128, stoch: 16, classes: 16, mixture: 2, norm: layer, act: silu, unroll: False, unimix: 0.01, outscale: 1.0, imglayers: 2, obslayers: 1, dynlayers: 1, absolute: False, blocks: 8, free_nats: 1.0}
+    rnn: {units: 128, bias: True, winit: trunc_normal, binit: zeros, norm: rms, update_bias: -1.0} # GRU
+    simple: {stoch: 128, dist: normal_logstd, layers: 4, units: 128, act: silu, norm: rms, bias: True, winit: trunc_normal, binit: zeros, outscale: 1.0} # MLPHead
+
+  decoder:
+    prockeys: '.*'
+    simple: {units: 64, norm: rms, act: silu, outscale: 1.0, depth: 64, mults: [2, 3, 4, 4], layers: 3, kernel: 5, symlog: True, bspace: 8, outer: False, strided: False, bias: True, winit: trunc_normal, binit: zeros}
+
+  actor:
+    bc: {units: 128, layers: 3, act: silu, norm: layer, minstd: 0.01, maxstd: 0.1, unimix: 0.0, bins: 255, outscale: 1.0, dist: 'normal_logstd', bias: True, winit: 'trunc_normal', binit: 'zeros'}
+    dreamer: {layers: 3, units: 128, act: silu, norm: rms, minstd: 0.1, maxstd: 1.0, outscale: 0.01, unimix: 0.01, winit: trunc_normal_in}
+    mbc: {units: 128, layers: 3, act: silu, norm: layer, minstd: 0.01, maxstd: 0.1, unimix: 0.0, bins: 255, outscale: 1.0, bias: True, winit: 'trunc_normal', binit: 'zeros'}
+    td3: {units: 128, layers: 3, act: relu, norm: layer, minstd: 0.01, maxstd: 0.1, unimix: 0.0, bins: 255, outscale: 0.001, bias: True, winit: 'trunc_normal', binit: 'zeros'}
+    ppo: {units: 128, layers: 3, act: relu, norm: layer, minstd: 0.01, maxstd: 0.1, unimix: 0.0, bins: 255, outscale: 0.001, bias: True, winit: 'trunc_normal', binit: 'zeros'}
+    gae: {units: 128, layers: 3, act: relu, norm: layer, minstd: 0.01, maxstd: 0.1, unimix: 0.0, bins: 255, outscale: 0.001, bias: True, winit: 'trunc_normal', binit: 'zeros'}
+
+  rewhead: {layers: 1, units: 256, act: silu, norm: rms, dist: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
+  conhead: {layers: 1, units: 256, act: silu, norm: rms, dist: binary, outscale: 1.0, winit: trunc_normal_in}
+  value: {layers: 3, units: 256, act: silu, norm: rms, dist: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
+  value_networks: # value networks (similar to value), but for other agents as well
+    sac: {layers: 3, units: 256, act: silu, norm: rms, dist: identity, outscale: 0.0, winit: trunc_normal_in, bins: 255}
+    td3: {layers: 3, units: 256, act: relu, norm: layer, dist: identity, outscale: 0.001, winit: trunc_normal_in, bins: 255}
+    ppo: {layers: 3, units: 256, act: relu, norm: layer, dist: identity, outscale: 0.001, winit: trunc_normal_in, bins: 255}
+    gae: {layers: 3, units: 256, act: relu, norm: layer, dist: identity, outscale: 0.001, winit: trunc_normal_in, bins: 255}
+  discriminator_head: {layers: 3, units: 256, act: silu, norm: rms, dist: symexp_twohot, outscale: 0.0, winit: trunc_normal_in, bins: 255}
+
+  language_model:
+    simple: {units: 128, layers: 8, heads: 8, ffup: 4,
+      act: 'gelu_tanh', norm: 'layer', qknorm: 'none', dropout: 0.2, bias: True, winit: 'trunc_normal', binit: 'zeros', outscale: 1.0, pool_depth: 1}
+
+  # Optimizer configs
+  opt: {lr: 6e-5, agc: 0.3, eps: 1e-20, beta1: 0.9, beta2: 0.999, nesterov: False, wd: 0.0, wdregex: r'/kernel$', schedule: const, warmup: 1000, anneal: 0}
+
+  # Configurations of various hyperparameters
+  loss_scales:
+    slampc: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0,
+      repval: 0.3, prefdyn: 1.0, prefrep: 0.1, contrast: 1.0, mixture: 0.1, actor_refreshing: 0.5} # teacher_refreshing: 0.0
+    sraif: {rec: 1.0, rew: 1.0, con: 1.0, dyn: 1.0, rep: 0.1, policy: 1.0, value: 1.0, repval: 0.3,
+      actor_refreshing: 0.8, contrast: 1.0, prefdyn: 1.0, prefrep: 0.1}
+  policy_dist_disc: categorical
+  policy_dist_cont: bounded_normal
+  imag_last: 0 # choose the last K steps to take into memory before imagination
+  imag_length: 15 # how much to imagine into the future
+  horizon: 333 # this is the horizon paramters for computing the lambda return and other things, not the actual horizon length
+  use_imiln: True
+  contdisc: True
+  imag_loss: {slowtar: False, lam: 0.95, actent: 3e-4, slowreg: 1.0, wment_scale: 3e-4,
+    simscore_scale: 0.1, reward_scale: 1.0, teacher_actor_sim_scale: 0.0, reg_scale: 0.5}
+  repl_loss: {slowtar: False, lam: 0.95, slowreg: 1.0, wment_scale: 3e-4, simscore_scale: 0.1,
+    reward_scale: 1.0, teacher_actor_sim_scale: 0.0, reg_scale: 0.5}
+  # actor_refreshing_decay: 0.99
+  actor_refreshing_loss: { alpha: 1.0 } # unused
+  teacher_refreshing_loss: { alpha: 1.0 }
+  slowvalue: {rate: 0.02, every: 1}
+  slowvalue_networks:
+    sac: {rate: 0.005, every: 1}
+    td3: {rate: 0.005, every: 1}
+  slowpolicy_networks:
+    td3: {rate: 0.005, every: 2}
+    ppo: {rate: 0.005, every: 1}
+  slowrew: {rate: 0.02, every: 1}
+  retnorm: {impl: perc, rate: 0.01, limit: 1.0, perclo: 5.0, perchi: 95.0, debias: False}
+  valnorm: {impl: none, rate: 0.01, limit: 1e-8}
+  advnorm: {impl: none, rate: 0.01, limit: 1e-8}
+  reward_grad: True
+  repval_loss: True
+  repval_grad: True
+  use_selfrefl: True
+  ac_grads: True
+  report: True
+  report_gradnorms: False
+
+
+#============================ Environment Primitives ============================
+
+lunar:
+  task: gym_LunarLander-v3
+  encoder.prockeys: 'state'
+  decoder.prockeys: 'state'
+  text_processor: ''
+  env.gym.obs_key: 'state'
+
+
+gym_pendulum_proprio:
+  task: gym_Pendulum-v1
+  encoder.prockeys: 'state'
+  decoder.prockeys: 'state'
+  text_processor: ''
+  env.gym.obs_key: 'state'
+
+gym_pendulum_image:
+  task: gym_Pendulum-v1
+  encoder.prockeys: 'state|image'
+  decoder.prockeys: 'state|image'
+  .*\.mults: [2, 3, 4, 4]
+  text_processor: ''
+  env.gym: { obs_key: state, img_obs_key: image, obs_render: True, image_size: 64 }
+
+mtc:
+  encoder.prockeys: 'image|state'
+  decoder.prockeys: 'image|state'
+  query_encoder.prockeys: '^$'
+  expert:
+    enable: True
+    n_episodes: 10
+  task: "mtc_mtc"
+  multi_task: False
+  text_processor: ''
+  .*\.mults: [2, 3, 4, 4] # because the default image size is 64x64, so we only need 4 layers
+
+kitchen_single: # This is single-task (same as previous task) upon reset
+  encoder.prockeys: 'image|observation|ag.*'
+  decoder.prockeys: 'image|observation|ag.*'
+  query_encoder.prockeys: 'dg.*|.*attention_mask.*|.*input_ids.*'
+  .*\.mults: [2, 3, 4, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 5
+    kitchen: { dataset_name: 'D4RL/kitchen/complete-v2', n_episodes: 5, prockeys: '.*microwave.*' }
+  multi_task: False
+  task: "kitchen_microwave" # "kitchen_kettle", "kitchen_light_switch", "kitchen_microwave", "kitchen_slide_cabinet"
+  # self_imitation: {disc: 0.999, thr: 0.001, fail: 0.97} # 200
+
+kitchen_combined: # This is multi-task combined into one task
+  encoder.prockeys: 'image|observation|ag.*'
+  decoder.prockeys: 'image|observation|ag.*'
+  query_encoder.prockeys: 'dg.*|.*attention_mask.*|.*input_ids.*'
+  .*\.mults: [2, 3, 4, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 5
+    kitchen: { dataset_name: 'D4RL/kitchen/complete-v2', n_episodes: 5, prockeys: '.*kettle.*|.*light switch.*|.*microwave.*|.*slide cabinet.*' }
+  multi_task: False
+  task: "kitchen_combined"
+  # self_imitation: {disc: 0.999, thr: 0.001, fail: 0.97} # 200
+
+kitchen_multitask: # This is multi-task upon reset
+  encoder.prockeys: 'image|observation|ag.*'
+  decoder.prockeys: 'image|observation|ag.*'
+  query_encoder.prockeys: 'dg.*|.*attention_mask.*|.*input_ids.*'
+  .*\.mults: [2, 3, 4, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 5
+    kitchen: { dataset_name: 'D4RL/kitchen/complete-v2', n_episodes: 5, prockeys: '.*kettle.*|.*light switch.*|.*microwave.*|.*slide cabinet.*' }
+  multi_task: True
+  suite: "kitchen"
+  tasks: ["kettle", "light switch", "microwave", "slide cabinet"]
+  # self_imitation: {disc: 0.999, thr: 0.001, fail: 0.97} # 200
+
+robosuite:
+  encoder.prockeys: '.*image.*|robot0.*'
+  decoder.prockeys: '.*image.*|robot0.*'
+  query_encoder.prockeys: '^$'
+  env.robosuite: { image_size: [96, 96] }
+  .*\.mults: [2, 3, 4, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 5
+    robosuite: { dataset_dir: 'third_party/mimicgen/datasets/source' }
+    robosuite_common: { dataset_path: tobeset }
+  multi_task: False
+  task: "robosuite_Coffee_D0"
+  # self_imitation: {disc: 0.9999, thr: 0.001, fail: 0.99} # 1000 steps
+
+metaworld:
+  encoder.prockeys: '.*image.*|.*state.*|obj_to_target|near_object'
+  decoder.prockeys: '.*image.*|.*state.*|obj_to_target|near_object'
+  query_encoder.prockeys: '^$'
+  env.metaworld: { image_size: [64, 64], reward_shaping: False }
+  .*\.mults: [2, 3, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 5
+    metaworld: { dataset_path: tobeset }
+  multi_task: False
+  task: "metaworld_button-press-v2"
+  # self_imitation: {disc: 0.998, thr: 0.001, fail: 0.98} # 250 steps
+
+metaworld_simple:
+  encoder.prockeys: '.*state.*|obj_to_target|near_object'
+  decoder.prockeys: '.*state.*|obj_to_target|near_object'
+  query_encoder.prockeys: '^$'
+  env.metaworld: { image_size: [64, 64], reward_shaping: True }
+  .*\.mults: [2, 3, 4, 4]
+  expert:
+    enable: False
+  multi_task: False
+  task: "metaworld_button-press-v2"
+  # self_imitation: {disc: 0.998, thr: 0.001, fail: 0.98} # 250 steps
+
+language_table:
+  encoder.prockeys: 'rgb|effector.*'
+  decoder.prockeys: 'rgb|effector.*'
+  query_encoder.prockeys: '.*input_ids.*|.*attention_mask.*'
+  expert:
+    enable: True
+    n_episodes: 100
+    languagetable: { dataset_name: 'language_table_blocktoblock_sim', dataset_dir: data/language_table }
+  multi_task: False
+  task: "languagetable_blocktoblock_sim"
+  .*\.mults: [2, 3, 4, 4, 4]
+  # self_imitation: {disc: 0.999, thr: 0.001, fail: 0.95} # 100 steps
+
+qenv:
+  encoder.prockeys: '.*state.*'
+  decoder.prockeys: '.*state.*'
+  query_encoder.prockeys: '^$'
+  .*\.mults: [2, 3, 4, 4]
+  expert:
+    enable: True
+    n_episodes: 10
+    qenv: { dataset_path: tobeset }
+  multi_task: False
+  task: "qenv_px100"
+
+
+#============================ Agent Primitives ============================
+
+# expert_training:
+#   .*\.reward_shaping: True
+
+denserew:
+  .*\.reward_shaping: True
+
+sm: &sm
+  .*\.depth: 4
+  .*\.units: 128
+  .*\.lang_units: 32
+  .*\.lang_layers: 4
+  .*\.layers: 4
+  .*\.vit_mlp_layers: 4
+
+
+md: &md
+  .*\.depth: 16
+  .*\.units: 256
+  .*\.lang_units: 64
+  .*\.lang_layers: 6
+  .*\.layers: 8
+  .*\.vit_mlp_layers: 8
+
+
+lg: &lg
+  .*\.depth: 32
+  .*\.units: 720
+  .*\.lang_units: 640
+  .*\.lang_layers: 8
+  .*\.layers: 8
+  .*\.vit_mlp_layers: 8
+
+
+slampc_1m: &slampc_1m
+  .*\.rssm: {deter: 512, hidden: 64, classes: 4}
+  .*\.qmopssm: {deter: 512, hidden: 64, classes: 4}
+  .*\.depth: 4
+  .*\.units: 128
+  .*\.lang_units: 32
+
+
+slampc_12m: &slampc_12m
+  .*\.rssm: {deter: 2048, hidden: 256, classes: 16}
+  .*\.qmopssm: {deter: 2048, hidden: 256, classes: 16}
+  .*\.depth: 16
+  .*\.units: 256
+  .*\.lang_units: 64
+  .*\.lang_layers: 4
+
+slampc_100m: &slampc_100m
+  .*\.rssm: {deter: 4096, hidden: 512, classes: 32}
+  .*\.qmopssm: {deter: 4096, hidden: 512, classes: 32}
+  .*\.depth: 40
+  .*\.units: 768
+  .*\.lang_units: 512
+  .*\.lang_layers: 8
+
+
+sraif_1m: &sraif_1m
+  .*\.rssm: {deter: 512, hidden: 64, classes: 4}
+  .*\.depth: 4
+  .*\.units: 128
+  .*\.lang_units: 32
+
+
+sraif_12m: &sraif_12m
+  .*\.rssm: {deter: 2048, hidden: 256, classes: 16}
+  .*\.depth: 16
+  .*\.units: 256
+  .*\.lang_units: 64
+  .*\.lang_layers: 4
+
+sraif_100m: &sraif_100m
+  .*\.rssm: {deter: 4096, hidden: 512, classes: 32}
+  .*\.depth: 40
+  .*\.units: 768
+  .*\.lang_units: 512
+  .*\.lang_layers: 8
+
+
+#============================ Other Primitives ============================
+
+jax_debug:
+  run.log_every: 5 # in seconds
+  # run.save_every: -1
+  # run.val_every: 50 # evaluation every training step
+  # run.val_ratio: 0.01 # number batch in the val dataset to evaluate, if temporary validation set counter > 1/n len val set, end validation
+  # run.from_checkpoint: ''
+  # <<: *size2m
+  jax.jit: False
+  jax.compile: False
+  jax.debug: True
+  run.debug: True
+
+
