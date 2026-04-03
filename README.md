@@ -65,7 +65,7 @@ neurorobot-preference-regret-learning/
 
 * To train an agent you might just want to run: `python scripts/train.py --configs <primitive1> <primitive2> ... --<key1> <value1> --<key2> <value2> ...` (make sure you check the file to see what it actually does)
 
-* For example, to train a Dreamer agent on the mountain car environment, you can run:
+* For example, to train the agent on the mountain car environment, you can run:
 
 ```bash
 python scripts/train.py --logroot logs --expname slampc-mtc-experiment01 --agent slampc --task mtc_mtc --encoder.prockeys 'image|state' --decoder.prockeys 'image|state'  --text_processor '' --.*\.mults 2,3,4,4 --.*\.depth 4 --.*\.units 128 --.*\.deter 512 --.*\.hidden 64 --.*\.classes 4 --batch_size 16 --batch_length 64
@@ -146,7 +146,7 @@ Or you can specify it in the command line (which is what we will do in the next 
 
 3. **[Step 3]** Train the expert model.
 
-* Here, we will train a dreamerv3 agent on the mountain car environment. You can also train other agents on other environments, but make sure you have the dataset ready.
+* Here, we will train an agent on the mountain car environment. You can also train other agents on other environments, but make sure you have the dataset ready.
 
 ```bash
 python scripts/train.py --configs mtc slampc_1m denserew --agent slampc --expname slampc-mtc-expert --run.steps 3000000
@@ -156,7 +156,7 @@ python scripts/train.py --configs mtc slampc_1m denserew --agent slampc --expnam
 * The trained agent's weights are saved inside the experiment folder. The agent automatically loads the weights when you run any scripts that call `--expname` to that folder.
 
 
-4. **[Step 4]** Use the trained expert, simulate it again on the environment to export the expert dataset (will be stored in `data/mtc/` directory):
+1. **[Step 4]** Use the trained expert, simulate it again on the environment to export the expert dataset (will be stored in `data/mtc/` directory):
 
 ```bash
 python scripts/export.py logs/slampc-mtc-expert data/mtc 5
