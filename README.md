@@ -146,7 +146,7 @@ Or you can specify it in the command line (which is what we will do in the next 
 
 3. **[Step 3]** Train the expert model.
 
-* Here, we will train an agent on the mountain car environment. You can also train other agents on other environments, but make sure you have the dataset ready.
+* Here, we will train an agent on the mountain car environment.
 
 ```bash
 python scripts/train.py --configs mtc slampc_1m denserew --agent slampc --expname slampc-mtc-expert --run.steps 3000000
