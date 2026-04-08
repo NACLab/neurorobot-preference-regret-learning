@@ -296,3 +296,18 @@ metaworld:
 python scripts/train.py --configs metaworld slampc_1m --agent slampc --expname slampc-metaworld
 ```
 
+## Citation
+
+```bibtex
+@misc{Nguyen2026PreferenceRegret,
+  title={Optimizing Neurorobot Policy under Limited Demonstration Data through Preference Regret},
+  author={Viet Dung Nguyen and Yuhang Song and Anh Nguyen and Jamison Heard and Reynold Bailey and Alexander Ororbia},
+  year={2026},
+  eprint={2604.03523},
+  archivePrefix={arXiv},
+  primaryClass={cs.RO},
+  url={https://arxiv.org/abs/2604.03523}
+}
+
+```
+
